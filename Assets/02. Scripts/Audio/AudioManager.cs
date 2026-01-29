@@ -42,15 +42,21 @@ public class AudioManager : MonoBehaviour
             currentBGM.mute = !bgmOn;
     }
 
-    // 플레이어 및 적 효과음
-    public void ToggleSFX(AudioSource[] playerSources, AudioSource[] enemySources)
+    // 효과음
+    public void ToggleSFX(AudioSource[] playerSources, AudioSource[] enemySources, AudioSource[] itemSources)
     {
         sfxOn = !sfxOn;
 
+        // 플레이어 효과음
         foreach (AudioSource src in playerSources)
             src.mute = !sfxOn;
 
+        // 적 효과음
         foreach (AudioSource src in enemySources)
+            src.mute = !sfxOn;
+
+        // 아이템 효과음
+        foreach (AudioSource src in itemSources)
             src.mute = !sfxOn;
     }
 }

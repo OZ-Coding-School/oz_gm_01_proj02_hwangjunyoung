@@ -20,6 +20,7 @@ public class OptionPanel : MonoBehaviour
     [Header("효과음 오디오 소스")]
     public AudioSource[] playerSources;
     public AudioSource[] enemySources;
+    public AudioSource[] itemSources;
 
 
     // 아이콘 반영
@@ -52,7 +53,7 @@ public class OptionPanel : MonoBehaviour
         // 게임 씬에서 시작할 때 필요한 안전 체크
         if (AudioManager.Instance != null)
         {
-            AudioManager.Instance.ToggleSFX(playerSources, enemySources);
+            AudioManager.Instance.ToggleSFX(playerSources, enemySources, itemSources);
         }
         else
         {
