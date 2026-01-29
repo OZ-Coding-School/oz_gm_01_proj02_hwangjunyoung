@@ -1,89 +1,130 @@
-using System.Collections;
-using System.Collections.Generic;
+
 using UnityEngine;
-
-
-/// <summary>
-/// 플레이어가 움직이면 메뉴 패널은 꺼져야 함
-/// 플레이어 이동은 키로 할 것인가 조이콘으로 할 것인가
-/// 점프 기능을 추가할 거면 카메라가 플레이어를 따라서 위로도 올라가게 할 것
-/// 점프로 타일을 부술 것인가 아니면 어택으로 타일을 부술 것인가
-/// 적들은 어택으로 없애고 아이템 상자는 접촉하면 아이템으로 점수가 모아지고 아이템 상자는 사라질 것
-/// 맵이 작은데 플레이어에게 달리기 기능이 필요한가
-/// 하나의 그리드 안에서 벽이랑 그라운드로 타일맵을 나누고 레이어도 나눔
-/// 그라운드는 플레이어가 바닥으로 인식을 해야하는 동시에 부술 수 있어야 함
-/// 벽은 어택을 해도 안 부숴져야하는데 동시에 플레이어가 벽 밖으로 못 나가게 막아야 함
-/// 아이템을 상자 이미지로 넣을지 아니면 타일을 부수는 걸로 할지 타일을 부수면 랜덤으로 아이템으로 인식할지 정하기
-/// 아이템을 얻은 걸 상단에다 상시 표시할지 아니면 게임 오버할 때만 보이게 할지 고민하기
-/// 어택으로 적과 타일을 부수는데 플레이어의 위나 아래는 점프로 없애고 어택으로는 좌우의 타일을 없애게 하기
-/// 플레이어가 점프를 터치 두번으로 하고 드래그로 좌우로 움직이게 하기
-/// 플레이어가 점프하면 닿은 위쪽 타일 한 칸이 부서지게 만들기
-/// 플레이어를 당길 때 적이 감지되면 공격 모션이 시작되고 적이 공격을 맞고 사라지게 만들기
-/// 플레이어의 공격 방법을 정하든가 적 감지시 공격 모션을 취하게 하기
-/// 아이템은 플레이어랑 접촉하면 얻어지지만 게임에서는 사라져야 함
-/// 아이템이 랜덤으로 나오게 할 것인지 아니면 맵에다 스프라이트로 찍을 것인지 고민하기
-/// 드림 씬 대사를 스크립터블 오브젝트로 할지 JSON으로 할지 Ink로 할지 정하기
-/// 플레이어를 아래로 당기면 공격 모션이 취해지게 해서 아래 타일이 부서지게 만들기
-/// 부수려는 타일을 두 번 터치하면 공격 모션을 취하고 타일이 부서지게 할지 방법 정하기
-/// </summary>
-
+using UnityEngine.EventSystems;
+using UnityEngine.Tilemaps;
 
 public class PlayerController : MonoBehaviour
 {
-    [Header("이동/점프")]
-    [SerializeField] private float moveSpeed = 5.0f;
-    [SerializeField] private float jumpForce = 7.0f;
+    [Header("플레이어 정보")]
+    [SerializeField] private float moveSpeed = 5.0f;  // 이동 속도 (좌우 드래그)
+    [SerializeField] private float jumpForce = 7.0f;  // 점프를 하는 힘 (위로 드래그)
+    [SerializeField] private float fallForce = 10.0f; // 낙하를 하는 힘 (아래로 드래그)
 
+    [Header("바닥 감지")]
+    public Transform groundCheck;
+    [SerializeField] private float groundCheckRadius = 0.15f;
+    [SerializeField] private LayerMask groundLayer;
 
-    [Header("바닥체크")]
-    public Transform groundCheck;   //발밑 위치를 나타내는 트랜스폼
-    [SerializeField] private float groundCheckRadius = 0.15f; // 감지용 반지름
-    [SerializeField] private LayerMask groundLayer;//레이어 설정
-
-
-    //내부에서 참조할 컴포넌트들
     private Animator anim;
     private Rigidbody2D rb;
     private SpriteRenderer spriteRenderer;
 
+    private bool isGrounded;
+    private bool jumpRequested;
+    private bool fallRequested;
+    private bool attackRequested;
 
-    //입력용
-    private float inputX;               //입력용
-    private bool isGrounded;            //바닥임?
-    private bool jumpRequested;         //점프함?
+    private readonly int moveSpeedHash = Animator.StringToHash("Speed");
+    private readonly int jumpHash = Animator.StringToHash("IsJumping");
+    private readonly int fallHash = Animator.StringToHash("IsFalling");
+    private readonly int attackHash = Animator.StringToHash("IsAttacking");
+
+    private Vector2 dragStartPos;
+    private Vector3Int lastDestroyedTile;     // 최근 파괴된 타일 좌표
+    private bool tileDestroyedThisAction;     // 액션 중 한 번만 파괴
+
+    public static System.Action OnGameStart;  // 게임 시작 알림 이벤트 선언
 
 
-    private static readonly int moveSpeedHash = Animator.StringToHash("Speed");
-    private static readonly int jumpHash = Animator.StringToHash("IsJumping");
+
     private void Awake()
     {
         anim = GetComponent<Animator>();
         rb = GetComponent<Rigidbody2D>();
         spriteRenderer = GetComponent<SpriteRenderer>();
     }
+
     void Update()
     {
-        inputX = Input.GetAxisRaw("Horizontal");
+#if UNITY_EDITOR
+        // 마우스 클릭 시작 → 드래그 시작점 기록
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                return;
 
-        //방향에 따라 좌우 반전
-        if (inputX != 0)//입력값이 0이 아니라면
-        {
-            if (inputX < 0)//왼쪽
+            Vector2 clickPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            Collider2D col = GetComponent<Collider2D>();
+            if (col != null && col.OverlapPoint(clickPos))
             {
-                spriteRenderer.flipX = true;
-            }
-            else //오른쪽
-            {
-                spriteRenderer.flipX = false;
+                dragStartPos = clickPos;
             }
         }
-        //점프
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+
+        // 드래그 중 액션 처리
+        if (Input.GetMouseButton(0))
         {
-            jumpRequested = true;
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                return;
+
+            Vector2 currentPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            Vector2 dragVector = currentPos - dragStartPos;
+
+            // 위로 드래그 → 점프
+            if (dragVector.y > 0.1f && isGrounded)
+            {
+                jumpRequested = true;
+                tileDestroyedThisAction = false;
+            }
+            // 아래로 드래그 → 낙하
+            else if (dragVector.y < -0.1f && !isGrounded)
+            {
+                fallRequested = true;
+                tileDestroyedThisAction = false;
+            }
+            else
+            {
+                // 좌우 드래그 → 이동
+                rb.velocity = new Vector2(dragVector.x * moveSpeed, rb.velocity.y);
+
+                if (dragVector.x > 0.01f)
+                {
+                    spriteRenderer.flipX = false;
+                    if (isGrounded)
+                    {
+                        attackRequested = true;
+                        DestroySideTile(Vector2.right); // 오른쪽 타일 파괴
+                    }
+                }
+                else if (dragVector.x < -0.01f)
+                {
+                    spriteRenderer.flipX = true;
+                    if (isGrounded)
+                    {
+                        attackRequested = true;
+                        DestroySideTile(Vector2.left); // 왼쪽 타일 파괴
+                    }
+                }
+            }
+
+
+            // 게임 시작되었다는 알림 주기
+            if (OnGameStart != null)
+            {
+                OnGameStart.Invoke(); // 호출하기
+                OnGameStart = null;   // 한 번만 발행되도록 초기화
+            }
+
+
         }
-        // anim.SetFloat("Speed", Mathf.Abs(rb.velocity.x));
-        anim.SetFloat(moveSpeedHash, Mathf.Abs(rb.velocity.x));
+#endif
+
+        // 애니메이션 업데이트
+        anim.SetFloat(moveSpeedHash, rb.velocity.magnitude);
+        anim.SetBool(jumpHash, !isGrounded && rb.velocity.y > 0);
+        anim.SetBool(fallHash, !isGrounded && rb.velocity.y < 0);
+        anim.SetBool(attackHash, attackRequested);
+
     }
 
     private void FixedUpdate()
@@ -91,31 +132,88 @@ public class PlayerController : MonoBehaviour
         // 바닥 감지
         isGrounded = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
 
-        // 대시 중이면 이동/점프 무시
-        if (GetComponent<PlayerDash>().isDash)
-            return;
-
-        // 이동
-        rb.velocity = new Vector2(inputX * moveSpeed, rb.velocity.y);
-
-        // 점프
-        if (jumpRequested && isGrounded)
+        // 점프 처리
+        if (jumpRequested)
         {
             rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
-            anim.SetBool(jumpHash, true);
+            jumpRequested = false;
         }
-        jumpRequested = false;
 
-        // 점프 종료
-        if (isGrounded && rb.velocity.y <= 0.05f)
+        // 낙하
+        if (fallRequested)
         {
-            anim.SetBool(jumpHash, false);
+            rb.AddForce(Vector2.down * fallForce, ForceMode2D.Impulse);
+            fallRequested = false;
+        }
+
+        // 공격
+        if (attackRequested && isGrounded)
+        {
+            // 공격 모션 중 타일 파괴는 충돌 시 처리
+        }
+
+    }
+
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        // Ground 레이어만 파괴
+        if (collision.gameObject.layer == LayerMask.NameToLayer("Ground"))
+        {
+            Tilemap tilemap = collision.gameObject.GetComponent<Tilemap>();
+            if (tilemap != null)
+            {
+                Vector3 hitPoint = collision.contacts[0].point;
+                Vector3Int cellPos = tilemap.WorldToCell(hitPoint);
+
+                // 한 칸의 타일만 부셔라.
+                if (cellPos != lastDestroyedTile && !tileDestroyedThisAction)
+                {
+                    tilemap.SetTile(cellPos, null); // 타일 파괴하기
+                    lastDestroyedTile = cellPos;    // 최근에 부순 타일 기록
+                    tileDestroyedThisAction = true; // 이번 액션에서는 한 칸만 부수기
+                }
+            }
+
+            // 착지 시 기본 상태로 복귀
+            if (isGrounded)
+            {
+                attackRequested = false;
+                anim.SetBool(attackHash, false);
+            }
+
         }
     }
 
+    private void DestroySideTile(Vector2 direction)
+    {
+        if (tileDestroyedThisAction) return;
+
+        // 플레이어 위치 기준으로 좌우 방향 타일 좌표 계산
+        RaycastHit2D hit = Physics2D.Raycast(transform.position, direction, 0.6f, groundLayer);
+        if (hit.collider != null)
+        {
+            Tilemap tilemap = hit.collider.GetComponent<Tilemap>();
+            if (tilemap != null)
+            {
+                Vector3Int cellPos = tilemap.WorldToCell(hit.point);
+                if (cellPos != lastDestroyedTile)
+                {
+                    tilemap.SetTile(cellPos, null); // 타일 파괴
+                    lastDestroyedTile = cellPos;
+                    tileDestroyedThisAction = true;
+                }
+            }
+        }
+    }
+
+    // 센서를 그려라.
     private void OnDrawGizmosSelected()
     {
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+        // 바닥 감지 센서 (노란색 원)
+        if (groundCheck != null)
+        {
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+        }
     }
 }

@@ -13,7 +13,10 @@ public class MapSpawner : MonoBehaviour
 
     [Header("청크 설정")]
     public float chunkHeight = 10;    // 청크 높이 (빈틈없이 프리팹이 생성되는 간격)
-    public int initialChunks = 3;     // 시작 시 생성할 총 청크 개수
+    public int initialChunks = 15;     // 시작 시 생성할 총 청크 개수
+
+    public EnemySpawner enemySpawner;
+    public ItemSpawner itemSpawner;
 
     private List<GameObject> activeChunks = new List<GameObject>();
     private float spawnY = 0f;
@@ -50,12 +53,14 @@ public class MapSpawner : MonoBehaviour
 
     void SpawnChunk()
     {
-        // 랜덤 인덱스 선택 (직전과 다른 값이 나오도록)
+        // 직전과 다른 값으로 랜덤 인덱스 선택하기
         int index;
+
         do
         {
             index = Random.Range(0, chunkPrefabs.Length);
-        } while (index == lastIndex && chunkPrefabs.Length > 1);
+        } 
+        while (index == lastIndex && chunkPrefabs.Length > 1);
 
         lastIndex = index;
 
@@ -64,11 +69,30 @@ public class MapSpawner : MonoBehaviour
 
         activeChunks.Add(chunk);
         spawnY -= chunkHeight;
+
+        // startChunkPrefab이 아닌 경우에만 몬스터 및 아이템을 스폰해라.
+        if (prefab != startChunkPrefab)
+        {
+            if (enemySpawner != null)
+            {
+                enemySpawner.SpawnEnemies(chunk);
+            }
+                
+
+            if (itemSpawner != null)
+            {
+                itemSpawner.SpawnItems(chunk);
+            }
+                
+        }
+
+
     }
 
     void RemoveOldChunk()
     {
-        if (activeChunks.Count > initialChunks + 2) // 화면 위로 벗어난 청크 제거
+        // 화면 위로 벗어난 청크 제거
+        if (activeChunks.Count > initialChunks + 2)
         {
             GameObject oldChunk = activeChunks[0];
             activeChunks.RemoveAt(0);

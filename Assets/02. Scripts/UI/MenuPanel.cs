@@ -19,13 +19,13 @@ public class MenuPanel : MonoBehaviour
     // 게임이 시작되었다는 알림 받기
     private void OnEnable()
     {
-        PlayerTouchMove.OnGameStart += HandleGameStart; // 이벤트 구독
+        PlayerController.OnGameStart += HandleGameStart; // 이벤트 구독
     }
 
     // 패널이 비활성화가 되면 이벤트 해제로 메모리 누수 방지하기
     private void OnDisable()
     {
-        PlayerTouchMove.OnGameStart -= HandleGameStart; // 이벤트 해제
+        PlayerController.OnGameStart -= HandleGameStart; // 이벤트 해제
     }
 
     // 게임이 시작되었다면

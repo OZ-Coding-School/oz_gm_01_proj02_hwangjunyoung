@@ -13,5 +13,9 @@ public class ProgressPanel : MonoBehaviour
     {
         progressPanel.SetActive(false);
     }
+
+    // 최고 점수
+    // 아이템 값
+    // 진행 정도
 }
 
